@@ -11,7 +11,14 @@ venv/
 __pycache__/
 .pytest_cache/
 .mypy_cache/
+.cache/
+*.egg-info/
+build/
+dist/
+.aws/
+.ssh/
 runs/
+outputs/
 datasets/
 data/
 models/

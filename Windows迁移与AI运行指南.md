@@ -1,104 +1,109 @@
-# Windows 迁移与 AI 运行指南
+# Windows、Linux 与 NVIDIA 迁移指南
 
-## 1. 当前能做什么
+这份文件给第一次迁移项目的组员，也给接手运行项目的 AI。它把“代码已经准备好”和“对应平台已经实测”分开记录，避免误把脚本存在当成迁移完成。
 
-这个仓库目前只能帮助组员和 AI 理解课程、项目目标和现有方案，暂时没有可执行程序。任何 AI 在声称“已经运行成功”之前，都必须先补齐代码、依赖、模型和测试数据，并给出真实的命令输出。
+## 1. 当前状态
 
-## 2. 推荐平台
+| 项目 | 当前状态 | 证据或下一步 |
+|---|---|---|
+| Apple M2 Mac、CPU | 已实测 | 本地视频、摄像头和网页流程已有运行记录 |
+| 自动选择 CPU/MPS/CUDA | 代码及单元测试完成 | 当前 Mac 实际选择 CPU；模拟后端测试覆盖 CUDA、MPS 和回退 |
+| 无摄像头环境诊断 | 已在当前 Mac 实测 | `driver-monitor-doctor` 检查依赖、模型、配置、设备和日志目录 |
+| Windows 原生启动 | 脚本已准备，未实机验证 | 在 Windows 11 电脑运行 `scripts\setup_windows.ps1` |
+| Ubuntu/Linux 启动 | 脚本已准备，未实机验证 | 在 Linux 电脑运行 `scripts/setup_unix.sh` |
+| 三系统自动测试 | 工作流已配置，未取得云端结果 | 推送到 GitHub 后查看 Actions |
+| NVIDIA CUDA 推理 | 未实机验证 | 需要 RTX 电脑、驱动检查和真实视频推理 |
+| Docker/TensorRT | 尚未开始 | CPU 和 CUDA 原生流程稳定后再做 |
 
-推荐配置：
+## 2. 固定的软件基线
 
-- Windows 11 64 位
-- WSL2，建议使用 Ubuntu 24.04 LTS
-- Docker Desktop，并启用 WSL2 integration
-- NVIDIA 显卡及支持 WSL 的 Windows 驱动
-- Git
+- Python：3.11.x
+- PyTorch：2.13.0
+- torchvision：0.28.0
+- Ultralytics：8.4.135
+- OpenCV contrib：4.11.0.86
+- 其余 Python 版本记录在 `pyproject.toml`
 
-不建议直接在 Windows 原生 Python 环境中混装 CUDA、PyTorch、OpenCV 和 TensorRT。优先在 WSL2 中开发；完成后再决定是否制作 Windows 原生版本。
+CUDA 版本暂时没有写死，因为尚未在目标 NVIDIA 电脑上核对驱动和 PyTorch 运行时。不要为了看起来完整而猜一个 CUDA 版本。先完成第 5 节的诊断，再基于目标电脑结果固定。
 
-### Jetson 与 Windows PC 的区别
+## 3. Windows 原生安装（第一推荐路径）
 
-- Jetson 使用 ARM64 和 JetPack/L4T，镜像名称通常包含 `l4t`。
-- Windows PC + RTX 显卡通常是 x86_64，不能使用 Jetson 的 `l4t-*` 镜像。
-- Windows/WSL2 应选择官方 x86_64 CUDA 或 PyTorch 镜像，并固定具体版本和镜像摘要。
-
-## 3. Windows 初次准备
-
-在管理员 PowerShell 中：
+先安装 64 位 Python 3.11，并确保 Python Launcher `py` 可用。然后在项目根目录打开 PowerShell：
 
 ```powershell
-wsl --install -d Ubuntu-24.04
-wsl --update
+powershell -ExecutionPolicy Bypass -File scripts\setup_windows.ps1
 ```
 
-重启后安装 Docker Desktop，并在 Docker Desktop 设置中开启 WSL2 backend 和对应 Ubuntu 发行版的集成。
+脚本会创建项目自己的 `.venv`、安装固定依赖、下载并校验两份模型、运行单元测试和无摄像头诊断。它不会主动打开摄像头。
 
-在 WSL2 中检查：
+安装结束后可以双击：
+
+- `检查运行环境.bat`：只检查环境；
+- `启动疲劳监测.bat`：启动本地网页。
+
+网页地址为 `http://127.0.0.1:8000`。首次点击“开始监测”时，Windows 可能要求摄像头权限。只能在静止、安全环境中模拟动作。
+
+## 4. Ubuntu/Linux 安装
+
+安装 Python 3.11 和创建虚拟环境所需的系统包后，在项目根目录运行：
 
 ```bash
-uname -m
+./scripts/setup_unix.sh
+./检查运行环境.sh
+./启动疲劳监测.sh
+```
+
+如果系统中的 Python 3.11 命令不是 `python3.11`，可以这样指定：
+
+```bash
+PYTHON_COMMAND=/完整路径/python3.11 ./scripts/setup_unix.sh
+```
+
+WSL2 可以用于代码和 GPU 开发，但第一轮摄像头验收建议使用 Windows 原生环境。WSL2 中转接 USB 摄像头需要额外配置，会把“算法是否工作”和“设备是否成功转接”两个问题混在一起。
+
+## 5. NVIDIA 电脑验收
+
+先运行：
+
+```powershell
 nvidia-smi
-docker version
-docker run --rm --gpus all nvidia/cuda:12.6.3-base-ubuntu24.04 nvidia-smi
+.venv\Scripts\driver-monitor-doctor.exe --json
 ```
 
-具体 CUDA、PyTorch 和 Ultralytics 版本应在真正编写代码时再次核对官方兼容关系，不要只复制旧项目中的版本。
+诊断结果中的 `inference_device.resolved` 应为 `cuda:0`。如果仍为 `cpu`，先不要运行摄像头，也不要声称 GPU 已经可用；应检查 NVIDIA 驱动、PyTorch 安装来源和 `torch.cuda.is_available()`。
 
-## 4. 后续代码结构
+诊断通过后依次验证：
 
-AI 或开发者应按下面的结构新增代码，不要把代码混进课程资料目录：
+1. 用同一段本地视频跑 CPU；
+2. 把 `configs/default.yaml` 中的 `phone.device` 改为 `cuda:0`，跑同一视频；
+3. 对比状态日志、处理 FPS、手机检测结果和错误信息；
+4. 最后才打开摄像头测试。
 
-```text
-src/                 主程序与算法
-tests/               自动化测试
-configs/             可提交的配置文件
-scripts/             训练、导出和验证脚本
-docs/                技术说明与实验记录
-assets/samples/      少量、已获授权的测试样例
-Dockerfile           x86_64 Windows/WSL2 运行环境
-docker-compose.yml   可选的摄像头或服务配置
-requirements.lock    固定的 Python 依赖
-```
+Ultralytics 的推理接口接受 `cpu`、CUDA 设备编号等设备设置；Apple Silicon 也支持 `mps`。本项目在这些设置前增加了可用性检查和 CPU 回退。参考 [Ultralytics Predict 官方文档](https://docs.ultralytics.com/modes/predict/) 和 [Ultralytics Train 官方文档](https://docs.ultralytics.com/modes/train/)。
 
-数据集、模型权重和实验输出应放在 Git 忽略目录中，并在文档中说明如何获取和校验。
+## 6. 自动测试
 
-## 5. 最小基线要求
+`.github/workflows/cross-platform-tests.yml` 会在 GitHub 托管的 `ubuntu-latest`、`macos-latest` 和 `windows-latest` 环境安装 CPU 基线、编译源码并运行单元测试。工作流文件存在不代表三系统已经通过；必须在 GitHub Actions 页面看到三项绿色结果，才可以记录为 CI 通过。运行环境标签依据 [GitHub 托管运行器文档](https://docs.github.com/en/actions/how-tos/write-workflows/choose-where-workflows-run/choose-the-runner-for-a-job)。
 
-第一版至少应做到：
+## 7. 迁移时必须保留的规则
 
-1. 接受本地视频文件输入；摄像头输入可以作为第二阶段。
-2. 每一帧输出检测结果，并在视频上显示状态。
-3. 使用真实时间戳或视频 FPS 计算持续时间，不能把“固定帧数”直接当成三秒。
-4. 输出可复核的日志：时间、状态、置信度和报警原因。
-5. 提供 CPU 模式，GPU 只作为加速选项。
-6. 提供一个不依赖私人数据的最小测试样例。
+- 使用 `pathlib` 和项目相对路径，不写死某台电脑的用户目录；
+- `.venv/`、`models/`、`outputs/`、私人视频和数据集不上传；
+- 状态判断使用真实时间或视频时间戳，不使用固定帧数冒充秒数；
+- CPU 始终是最低可运行路径；
+- Windows 和 Linux 出现问题时，先保存 `driver-monitor-doctor --json` 的完整结果；
+- Windows、CUDA、摄像头和准确率都必须有真实输出，不能仅凭代码推断已经成功。
 
-## 6. 评估要求
+## 8. “迁移完成”的最低标准
 
-- 数据必须按驾驶员划分训练集、验证集和测试集，避免同一个人同时出现在训练和测试中。
-- 除准确率外，应报告 precision、recall、F1、误报率、漏报率、处理 FPS 和报警延迟。
-- 分别测试白天、夜间、戴眼镜、侧脸、遮挡和不同摄像头距离。
-- 明确“困倦”“分心”和“已经睡着”的定义，不能混为同一个标签。
-- 所有最终数字都要能够追溯到脚本、配置、模型版本和数据划分。
+只有同时满足以下条件，才能说某个平台迁移完成：
 
-## 7. DriveEye 参考项目注意事项
+1. 从空环境按本文档安装成功；
+2. 无摄像头环境诊断通过；
+3. 单元测试通过；
+4. 同一段视频可以完成推理并生成可读日志；
+5. 摄像头可以启动、停止并被安全释放；
+6. 若声称支持 NVIDIA GPU，诊断显示 `cuda:0` 且实际推理完成；
+7. 已把平台、Python、依赖、设备、命令和已知问题写进实验记录。
 
-如果继续使用 DriveEye：
-
-- 不要沿用不存在的 `nvcr.io/nvidia/l4t-ml:r36.4.0`。
-- README 所称 YOLOv5 与训练代码使用的 YOLO11 不一致，必须统一。
-- 补齐并固定 PyTorch、Ultralytics、OpenCV 和 ONNX/TensorRT 依赖。
-- 修正 TensorRT 导出脚本的模型路径。
-- 将基于固定 15 FPS 和连续 45 帧的判断改为基于时间的滑动窗口。
-- 重新准备数据并独立复现实验，不要引用未复现的结果。
-
-## 8. 完成标准
-
-只有同时满足以下条件，AI 才能说“Windows 迁移完成”：
-
-- 新电脑可以从空环境按文档安装。
-- CPU 模式能够处理一段示例视频。
-- NVIDIA GPU 模式通过容器内 `nvidia-smi` 和实际推理测试。
-- 自动化测试通过。
-- 同一模型在同一视频上能得到可重复结果。
-- README 中列出已知限制、数据来源、模型来源和许可证。
+Docker、云部署和 TensorRT 不属于当前这一步。先把 Windows/Linux 原生 CPU 基线和 NVIDIA 实机验收做稳，再进入部署阶段。

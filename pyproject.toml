@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ee6008-driver-monitor"
+version = "0.1.0"
+description = "Local-first driver facial fatigue monitoring for EE6008"
+readme = "README.md"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+  "fastapi==0.141.1",
+  "mediapipe==0.10.35",
+  "numpy==1.26.4",
+  "opencv-contrib-python==4.11.0.86",
+  "Pillow==12.3.0",
+  "PyYAML==6.0.3",
+  "uvicorn==0.52.4",
+]
+
+[project.optional-dependencies]
+dev = []
+actions = [
+  "torch==2.13.0",
+  "torchvision==0.28.0",
+  "ultralytics==8.4.135",
+]
+
+[project.scripts]
+driver-monitor = "driver_monitor.cli:main"
+driver-monitor-gui = "driver_monitor.gui:main"
+driver-monitor-web = "driver_monitor.web_dashboard:main"
+driver-monitor-doctor = "driver_monitor.doctor:main"
+driver-monitor-verify = "driver_monitor.verify:main"
+
+[tool.setuptools.package-data]
+driver_monitor = ["web/*.html", "web/*.css", "web/*.js"]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

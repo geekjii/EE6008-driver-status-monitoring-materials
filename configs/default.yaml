@@ -1,0 +1,56 @@
+camera:
+  index: 0
+  width: 1280
+  height: 720
+  mirror: true
+
+face:
+  model_path: models/face_landmarker.task
+  min_detection_confidence: 0.5
+  min_presence_confidence: 0.5
+  min_tracking_confidence: 0.5
+
+phone:
+  enabled: true
+  model_path: models/yolo26n.pt
+  confidence_threshold: 0.35
+  inference_interval_seconds: 0.35
+  image_size: 416
+  # auto: 优先 CUDA，其次 Apple MPS；不可用时安全回退到 CPU。
+  device: auto
+
+calibration:
+  enabled: true
+  duration_seconds: 5.0
+  min_samples: 30
+  eye_closed_ratio: 0.72
+  mouth_open_ratio: 2.2
+  ear_threshold_min: 0.08
+  ear_threshold_max: 0.24
+  mar_threshold_min: 0.45
+  mar_threshold_max: 1.20
+
+fatigue:
+  ear_closed_threshold: 0.21
+  eye_warning_seconds: 1.5
+  eye_danger_seconds: 3.0
+  mar_open_threshold: 0.65
+  yawn_min_seconds: 1.2
+  yawn_window_seconds: 60.0
+  yawn_warning_count: 2
+  perclos_window_seconds: 60.0
+  perclos_min_coverage_seconds: 10.0
+  perclos_warning_threshold: 0.20
+  perclos_danger_threshold: 0.35
+  no_face_warning_seconds: 2.0
+  # 2026-08-31真人校准：正视约0度、低头17-21度、左转约-39度、右转大于+66度。
+  head_yaw_warning_degrees: 25.0
+  head_down_warning_degrees: 15.0
+  head_pose_warning_seconds: 2.0
+  phone_warning_seconds: 2.0
+  recovery_seconds: 2.0
+
+output:
+  show_window: true
+  write_events: true
+  events_path: outputs/events.jsonl

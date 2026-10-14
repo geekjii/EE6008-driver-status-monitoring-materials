@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="EE6008 local driver fatigue monitoring dashboard" />
+    <title>DriveGuard · Driver Fatigue Monitoring</title>
+    <link rel="stylesheet" href="/assets/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">DG</span>
+          <div>
+            <p class="eyebrow">EE6008 · LOCAL INTELLIGENCE</p>
+            <h1>DriveGuard</h1>
+          </div>
+        </div>
+        <div class="header-actions">
+          <div class="privacy-badge" id="connection-badge"><span></span><b data-i18n="本地处理 · 画面不上传">Local processing · No video upload</b></div>
+          <select class="language-select" id="language-select" aria-label="Interface language" data-i18n-label="界面语言">
+            <option value="en">English</option><option value="zh">中文</option>
+          </select>
+        </div>
+      </header>
+
+      <main class="dashboard-grid">
+        <section class="video-panel panel">
+          <div class="panel-heading">
+            <div>
+              <p class="section-label">LOCAL INPUT</p>
+              <h2 data-i18n="驾驶员监测画面">Driver monitoring</h2>
+            </div>
+            <div class="live-badge is-idle" id="live-badge"><i></i><span data-i18n="待机">Standby</span></div>
+          </div>
+          <div class="camera-stage">
+            <div class="camera-grid"></div>
+            <img id="camera-feed" class="camera-feed" alt="Driver monitoring" data-i18n-alt="驾驶员监测画面" />
+            <div class="camera-placeholder" id="camera-placeholder">
+              <span class="camera-icon" aria-hidden="true"></span>
+              <strong id="placeholder-title" data-i18n="摄像头尚未启动">Camera is off</strong>
+              <small id="placeholder-detail" data-i18n="启动后先保持睁眼、闭嘴约 5 秒">Keep your eyes open and mouth closed for about 5 seconds after starting</small>
+            </div>
+            <div class="camera-meta">
+              <span id="source-caption" data-i18n="本地输入">Local input</span>
+              <span id="fps-value">0.0 FPS</span>
+            </div>
+          </div>
+          <p class="calibration-note" data-i18n="启动校准：正对镜头，正常睁眼、闭嘴。约 5 秒有效画面后开始监测；人脸丢失或明显转头时暂停计时。">Startup calibration: face the camera with eyes open and mouth closed. Monitoring starts after about 5 seconds of valid observations; the timer pauses if your face is lost or turned away.</p>
+        </section>
+
+        <aside class="insight-column">
+          <section class="risk-card panel" id="risk-card" data-state="idle">
+            <div class="risk-orbit" aria-hidden="true"><span></span></div>
+            <div>
+              <p class="section-label">CURRENT STATUS</p>
+              <h2 id="state-title" data-i18n="系统待机">Ready to monitor</h2>
+              <p id="state-message" data-i18n="点击开始监测，系统会先建立个人面部基准。">Start monitoring to establish your personal facial baseline.</p>
+            </div>
+          </section>
+
+          <section class="metrics-grid" aria-label="Fatigue indicators" data-i18n-label="疲劳指标">
+            <article class="metric-card panel">
+              <span data-i18n="人脸状态">Face presence</span><strong id="face-value">--</strong><small>Face presence</small>
+            </article>
+            <article class="metric-card panel">
+              <span data-i18n="EAR 眼睛">Eyes · EAR</span><strong id="ear-value">--</strong><small id="ear-caption">Eye aspect ratio</small>
+            </article>
+            <article class="metric-card panel">
+              <span data-i18n="MAR 嘴巴">Mouth · MAR</span><strong id="mar-value">--</strong><small id="mar-caption">Mouth aspect ratio</small>
+            </article>
+            <article class="metric-card panel">
+              <span>PERCLOS</span><strong id="perclos-value">--</strong><small>Closed-eye ratio</small>
+              <div class="metric-progress"><span id="perclos-bar"></span></div>
+            </article>
+            <article class="metric-card panel">
+              <span data-i18n="持续闭眼">Continuous eye closure</span><strong id="closed-value">--</strong><small>Continuous closure</small>
+            </article>
+            <article class="metric-card panel">
+              <span data-i18n="近期哈欠">Recent yawns</span><strong id="yawn-value">--</strong><small>Yawns in time window</small>
+            </article>
+            <article class="metric-card phone-card panel" id="phone-card">
+              <span data-i18n="手机状态">Phone detection</span><strong id="phone-value">--</strong><small id="phone-caption" data-i18n="YOLO26n · 本地CPU">YOLO26n · Local inference</small>
+              <p class="phone-note" data-i18n="当前检测画面中的手机，尚不能确认是否正在使用。">Detects phones in view; phone use is not yet confirmed.</p>
+            </article>
+            <article class="metric-card pose-card panel">
+              <span data-i18n="头部姿态">Head pose</span>
+              <div class="pose-values">
+                <strong><b id="pitch-value">--</b><small data-i18n="俯仰">Pitch</small></strong>
+                <strong><b id="yaw-value">--</b><small data-i18n="左右">Yaw</small></strong>
+                <strong><b id="roll-value">--</b><small data-i18n="侧倾">Roll</small></strong>
+              </div>
+              <small id="pose-caption" data-i18n="Head pose · 偏离前方持续 2 秒后提醒">Head pose · Alert after 2 seconds looking away</small>
+            </article>
+          </section>
+
+          <section class="events-panel panel">
+            <div class="panel-heading compact">
+              <div><p class="section-label">EVENT TIMELINE</p><h2 data-i18n="状态记录">Event timeline</h2></div>
+              <time id="local-clock">--:--:--</time>
+            </div>
+            <ol class="event-list" id="event-list">
+              <li><span></span><div><strong data-i18n="等待开始监测">Waiting to start</strong><small data-i18n="所有计算将在本机完成">All processing takes place on this computer</small></div></li>
+            </ol>
+          </section>
+        </aside>
+      </main>
+
+      <footer class="control-dock panel">
+        <div class="source-controls">
+          <label class="source-copy" for="source-select"><span data-i18n="输入来源">Input source</span>
+            <select id="source-select"><option value="camera" data-i18n="摄像头">Camera</option><option value="video" data-i18n="本地视频">Local video</option></select>
+          </label>
+          <div class="video-path-field" id="video-path-field" hidden>
+            <label for="video-path" data-i18n="本地视频完整路径">Full path to a local video</label>
+            <input id="video-path" type="text" autocomplete="off" spellcheck="false" placeholder="Paste the full path to a video on this computer" data-i18n-placeholder="粘贴这台电脑上的视频完整路径" aria-describedby="video-path-hint" />
+            <small id="video-path-hint" data-i18n="文件只在本机读取，不会上传。片段开头应正常睁眼、闭嘴，供个人校准。">Read locally with no upload. Start the clip with eyes open and mouth closed for calibration.</small>
+          </div>
+        </div>
+        <div class="controls">
+          <button class="button primary" id="start-button" type="button" data-i18n="开始监测">Start monitoring</button>
+          <button class="button secondary" id="calibrate-button" type="button" disabled data-i18n="重新校准">Recalibrate</button>
+          <button class="button ghost" id="stop-button" type="button" disabled data-i18n="停止">Stop</button>
+        </div>
+      </footer>
+    </div>
+    <script src="/assets/i18n.js" defer></script>
+    <script src="/assets/app.js" defer></script>
+  </body>
+</html>
