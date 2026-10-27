@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = []
+dev = ["httpx==0.28.1"]
 actions = [
   "torch==2.13.0",
   "torchvision==0.28.0",

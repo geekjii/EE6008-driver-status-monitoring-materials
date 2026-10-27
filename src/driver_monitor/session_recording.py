@@ -89,6 +89,70 @@ def write_json(path: Path, value: Any) -> None:
     path.write_text(json.dumps(clean(value), ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8")
 
 
+def write_key_charts(payload: dict, destination: Path) -> Path:
+    template = (Path(__file__).parent / "web" / "key_charts_template.html").read_text(encoding="utf-8")
+    encoded = json.dumps(clean(payload), ensure_ascii=False, allow_nan=False, separators=(",", ":")).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
+    path = destination / "关键指标折线图.html"
+    path.write_text(template.replace("__SESSION_DATA__", encoded), encoding="utf-8")
+    return path
+
+
+def key_charts_from_csv(csv_path: Path) -> Path:
+    """Add an easy-to-read chart to an existing export without changing its CSV."""
+    destination = csv_path.parent
+    summary = json.loads((destination / "监测摘要.json").read_text(encoding="utf-8"))
+    flags = {"calibration_valid", "face_detected", "pose_usable", "eye_closed", "mouth_open",
+             "perclos_ready", "phone_checked", "phone_fresh", "phone_detected"}
+    text_fields = {"recorded_at_utc", "phase", "state", "raw_state", "phone_device"}
+
+    def decode(key: str, value: str) -> Any:
+        if value == "":
+            return None
+        if key in text_fields:
+            return value
+        if key in flags:
+            return bool(int(value))
+        return json.loads(value)
+
+    with csv_path.open(encoding="utf-8-sig", newline="") as handle:
+        rows = [[decode(key, row[label]) for key, label in COLUMNS] for row in csv.DictReader(handle)]
+    payload = {"summary": summary, "columns": [{"key": key, "label": label} for key, label in COLUMNS], "rows": rows}
+    path = write_key_charts(payload, destination)
+    # Keep the previous ZIP; provide a new complete package including the chart.
+    archive = destination / "监测导出_含折线图.zip"
+    if archive.exists():
+        archive = destination / ("监测导出_含折线图_{}.zip".format(uuid4().hex[:8]))
+    with ZipFile(archive, "x", ZIP_DEFLATED) as zipped:
+        for name in ("关键指标折线图.html", "监测报告.html", "监测数据.csv", "事件记录.csv",
+                     "逐帧原始数据.jsonl", "监测摘要.json", "字段说明.json"):
+            file_path = destination / name
+            if file_path.is_file():
+                zipped.write(file_path, name)
+    return path
+
+
+def archive_legacy_events(source: Path, directory: Path) -> Path:
+    """Export every existing event, without inventing missing continuous frames."""
+    rows = [json.loads(line) for line in source.read_text(encoding="utf-8").splitlines() if line.strip()]
+    keys = list(dict.fromkeys(key for row in rows for key in row))
+    labels = dict(COLUMNS)
+    destination = Path(directory) / ("历史事件归档_{}Z_{}".format(
+        datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S"), uuid4().hex[:8]))
+    destination.mkdir(parents=True, exist_ok=False)
+    with (destination / "旧监测事件.csv").open("w", encoding="utf-8-sig", newline="") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(["原日志行号 / Original event row"] + [labels.get(key, key) for key in keys])
+        for index, row in enumerate(rows, 1):
+            writer.writerow([index] + [cell(clean(row.get(key))) for key in keys])
+    shutil.copyfile(source, destination / "原事件日志.jsonl")
+    write_json(destination / "归档说明.json", {
+        "source": str(source), "event_count": len(rows), "exported_at_utc": utc_now(),
+        "scope": "legacy_state_changes_only",
+        "说明": "旧日志只保留状态变化时的记录，没有逐帧连续数据，不能恢复完整指标曲线。时间是各次监测的相对时间，原日志没有完整的会话边界。",
+    })
+    return destination / "旧监测事件.csv"
+
+
 class SessionRecorder:
     """Stream all frame measurements to disk; exports never consume camera frames."""
 
@@ -270,11 +334,14 @@ class SessionRecorder:
             write_json(destination / "监测摘要.json", summary)
             write_json(destination / "字段说明.json", {key: label for key, label in COLUMNS})
             rows = [json.loads(line) for line in (destination / "逐帧原始数据.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
+            if len(rows) != summary["frames"]:
+                raise ValueError("Recorded frame count does not match exported measurements")
             payload = {"summary": summary, "columns": [{"key": key, "label": label} for key, label in COLUMNS],
                        "rows": [[row.get(key) for key, _ in COLUMNS] for row in rows]}
             template = (Path(__file__).parent / "web" / "report_template.html").read_text(encoding="utf-8")
             encoded = json.dumps(payload, ensure_ascii=False, allow_nan=False, separators=(",", ":")).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
             (destination / "监测报告.html").write_text(template.replace("__SESSION_DATA__", encoded), encoding="utf-8")
+            charts_path = write_key_charts(payload, destination)
             archive = destination / "监测导出.zip"
             with ZipFile(archive, "w", ZIP_DEFLATED) as zipped:
                 for path in destination.iterdir():
@@ -282,6 +349,7 @@ class SessionRecorder:
                         zipped.write(path, path.name)
             result = {"session_id": self.session_id, "export_id": export_id, "frames": summary["frames"],
                       "directory": str(destination), "report_path": str(destination / "监测报告.html"),
+                      "charts_path": str(charts_path),
                       "archive_path": str(archive), "status": summary["status"]}
             with self._lock:
                 self._last_export = result

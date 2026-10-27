@@ -137,6 +137,8 @@ class OutputConfig:
     show_window: bool = True
     write_events: bool = True
     events_path: str = "outputs/events.jsonl"
+    record_session: bool = True
+    sessions_path: str = "outputs/监测导出"
 
 
 @dataclass(frozen=True)

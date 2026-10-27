@@ -124,6 +124,19 @@
           <button class="button ghost" id="stop-button" type="button" disabled data-i18n="停止">Stop</button>
         </div>
       </footer>
+      <section class="export-panel panel" aria-label="Session export" data-i18n-label="监测数据导出">
+        <div>
+          <h2 data-i18n="监测数据导出">Session export</h2>
+          <p id="export-message" data-i18n="每帧记录重要指标，停止后自动保存完整报告。">Important measurements are recorded every frame. A complete report is saved when monitoring stops.</p>
+          <small id="export-path"></small>
+        </div>
+        <div class="export-actions">
+          <button id="export-button" type="button" class="button secondary" disabled data-i18n="导出本次监测">Export this session</button>
+          <a id="export-report" class="button ghost" href="#" target="_blank" rel="noopener" hidden data-i18n="查看关键指标折线图">View key indicator charts</a>
+          <a id="export-detail" class="button ghost" href="#" target="_blank" rel="noopener" hidden data-i18n="完整数据报告">Full data report</a>
+          <a id="export-download" class="button ghost" href="#" download hidden data-i18n="下载数据包">Download data package</a>
+        </div>
+      </section>
     </div>
     <script src="/assets/i18n.js" defer></script>
     <script src="/assets/app.js" defer></script>

@@ -137,7 +137,7 @@ def run_video_smoke(config, project_root: Path, output_directory: Path) -> Dict[
         calibration=replace(config.calibration, enabled=False),
         phone=replace(config.phone, device="cpu"),
         fatigue=FatigueConfig(),
-        output=replace(config.output, show_window=False, write_events=True, events_path=str(events_path)),
+        output=replace(config.output, show_window=False, write_events=True, events_path=str(events_path), record_session=False),
     )
     with TemporaryDirectory(prefix="driver-monitor-verify-") as directory:
         video_path = Path(directory) / "synthetic_blank.avi"

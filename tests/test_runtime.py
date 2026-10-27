@@ -4,6 +4,8 @@ from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
+import tempfile
+import json
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -35,7 +37,7 @@ class RuntimeTests(unittest.TestCase):
         config = config or AppConfig(
             phone=PhoneConfig(enabled=False),
             calibration=CalibrationConfig(enabled=False),
-            output=OutputConfig(write_events=False),
+            output=OutputConfig(write_events=False, record_session=False),
         )
         capture = FakeCapture(positions, fps)
         analyzer = analyzer or Mock(analyze=Mock(return_value=None))
@@ -58,6 +60,23 @@ class RuntimeTests(unittest.TestCase):
         meter = FpsMeter()
         self.assertEqual(meter.update(10.0), 0.0)
         self.assertAlmostEqual(meter.update(10.1), 10.0)
+
+    def test_video_runtime_records_every_frame_and_exports_at_eof(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = AppConfig(
+                phone=PhoneConfig(enabled=False), calibration=CalibrationConfig(enabled=False),
+                output=OutputConfig(write_events=False, record_session=True, sessions_path=directory),
+            )
+            runtime, capture, analyzer = self.make_runtime([0.0, 100.0, 300.0], config=config)
+            self.assertEqual([runtime.read().timestamp for _ in range(3)], [0.0, 0.1, 0.3])
+            self.assertIsNone(runtime.read())
+            exported = runtime.recorder.info()["last_export"]
+            self.assertEqual(exported["frames"], 3)
+            self.assertEqual(exported["status"], "completed")
+            self.assertTrue(Path(exported["report_path"]).is_file())
+            rows = [json.loads(line) for line in (runtime.recorder.directory / "逐帧原始数据.jsonl").read_text().splitlines()]
+            self.assertEqual(len(rows), 3)
+            capture.release.assert_called_once()
 
     def test_frame_is_calibrating_until_snapshot_exists(self):
         frame = RuntimeFrame(
@@ -163,7 +182,7 @@ class RuntimeTests(unittest.TestCase):
         config = AppConfig(
             phone=PhoneConfig(enabled=False),
             calibration=CalibrationConfig(duration_seconds=2.0, min_samples=3),
-            output=OutputConfig(write_events=False),
+            output=OutputConfig(write_events=False, record_session=False),
         )
         forward = FaceSignals(ear=0.3, mar=0.2, landmarks=(), pitch=0.0, yaw=0.0)
         away = replace(forward, ear=0.08, mar=0.8, yaw=35.0)

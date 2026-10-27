@@ -1,6 +1,19 @@
 /* Presentation-only translations; detection values and thresholds stay intact. */
 (() => {
   const english = {
+    "监测数据导出": "Session export",
+    "每帧记录重要指标，停止后自动保存完整报告。": "Important measurements are recorded every frame. A complete report is saved when monitoring stops.",
+    "导出本次监测": "Export this session",
+    "查看折线图报告": "View charts and report",
+    "查看关键指标折线图": "View key indicator charts",
+    "完整数据报告": "Full data report",
+    "下载数据包": "Download data package",
+    "正在导出…": "Exporting…",
+    "已记录 {frames} 帧，可导出当前结果。": "{frames} frames recorded. You can export the current results.",
+    "已保存 {frames} 帧，表格和折线图已独立保存。": "{frames} frames saved. Tables and charts are stored separately.",
+    "还没有可导出的监测数据": "No monitoring data is available to export yet",
+    "找不到导出文件": "Export file not found",
+    "导出失败": "Export failed",
     "DriveGuard · 驾驶员疲劳感知": "DriveGuard · Driver Fatigue Monitoring",
     "EE6008 本地驾驶员疲劳感知仪表盘": "EE6008 local driver fatigue monitoring dashboard",
     "界面语言": "Interface language",
@@ -135,6 +148,7 @@
     const text = String(value || "");
     if (language === "zh" || !text) return text;
     if (english[text]) return english[text];
+    if (text.startsWith("导出失败：")) return t("导出失败") + ': ' + text.slice(5);
     if (text.startsWith("摄像头 ")) return t("摄像头 {index}", { index: text.slice(4) });
     if (text.startsWith("视频 · ")) return t("视频 · {name}", { name: text.slice(5) });
     if (text.startsWith("状态变为 ")) return t("状态变为 {state}", { state: serverText(text.slice(5)) });

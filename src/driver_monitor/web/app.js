@@ -1,6 +1,12 @@
 const { t, serverText, applyStaticTranslations, setLanguage, locale } = window.DriveGuardI18n;
 
 const ui = {
+  exportButton: document.querySelector("#export-button"),
+  exportMessage: document.querySelector("#export-message"),
+  exportPath: document.querySelector("#export-path"),
+  exportReport: document.querySelector("#export-report"),
+  exportDetail: document.querySelector("#export-detail"),
+  exportDownload: document.querySelector("#export-download"),
   language: document.querySelector("#language-select"),
   clock: document.querySelector("#local-clock"),
   connection: document.querySelector("#connection-badge"),
@@ -69,6 +75,33 @@ let requestPending = false;
 let commandPending = false;
 let latestStatus = null;
 let connected = true;
+let exportPending = false;
+let exported = null;
+
+function renderExport() {
+  const session = latestStatus?.session;
+  if (session?.last_export) exported = session.last_export;
+  ui.exportButton.disabled = exportPending || !session || !session.frames || session.read_only;
+  ui.exportButton.textContent = t(exportPending ? "正在导出…" : "导出本次监测");
+  ui.exportMessage.textContent = session?.export_error
+    ? t("导出失败") + ": " + session.export_error
+    : session?.frames
+      ? t(exported && exported.session_id === session.session_id
+        ? "已保存 {frames} 帧，表格和折线图已独立保存。"
+        : "已记录 {frames} 帧，可导出当前结果。", {
+          frames: exported?.session_id === session.session_id ? exported.frames : session.frames,
+        })
+      : t("每帧记录重要指标，停止后自动保存完整报告。");
+  ui.exportReport.hidden = !exported;
+  ui.exportDetail.hidden = !exported;
+  ui.exportDownload.hidden = !exported;
+  ui.exportPath.textContent = exported?.directory || session?.directory || "";
+  if (exported) {
+    ui.exportReport.href = exported.charts_url || exported.report_url;
+    ui.exportDetail.href = exported.report_url;
+    ui.exportDownload.href = exported.download_url;
+  }
+}
 
 function updateSourceControls() {
   const running = Boolean(latestStatus?.running);
@@ -231,6 +264,7 @@ function render(data) {
   updateSourceControls();
   ensureVideoStream(data.running && data.phase !== "stopping");
   renderEvents(data.events || []);
+  renderExport();
 }
 
 async function fetchStatus() {
@@ -290,6 +324,23 @@ ui.stop.addEventListener("click", async () => {
   try { await command("/api/stop"); } catch (error) { window.alert(error.message); }
 });
 
+ui.exportButton.addEventListener("click", async () => {
+  if (exportPending) return;
+  exportPending = true;
+  renderExport();
+  try {
+    const response = await fetch("/api/export", { method: "POST" });
+    const result = await response.json();
+    if (!response.ok) throw new Error(serverText(result.detail || "导出失败"));
+    exported = result;
+    // The independent files are already saved by the local service.
+    ui.exportDownload.href = result.download_url;
+    ui.exportDownload.click();
+    await fetchStatus();
+  } catch (error) { window.alert(error.message); }
+  finally { exportPending = false; renderExport(); }
+});
+
 window.addEventListener("beforeunload", () => {
   if (!latestStatus?.running) return;
   navigator.sendBeacon("/api/stop", new Blob([], { type: "application/octet-stream" }));
@@ -301,11 +352,13 @@ ui.language.addEventListener("change", () => {
   else { updateSourceControls(); renderEvents([]); }
   setConnection(connected);
   updateClock();
+  renderExport();
 });
 
 applyStaticTranslations();
 updateClock();
 updateSourceControls();
+renderExport();
 window.setInterval(updateClock, 1000);
 window.setInterval(fetchStatus, 250);
 fetchStatus();

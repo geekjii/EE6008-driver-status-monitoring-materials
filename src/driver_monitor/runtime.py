@@ -15,6 +15,7 @@ from .events import JsonlEventWriter
 from .face_landmarks import FaceSignals, MediaPipeFaceAnalyzer
 from .fatigue_engine import FatigueEngine
 from .phone_detection import PhoneDetector, PhoneObservation
+from .session_recording import SessionRecorder
 
 
 class FpsMeter:
@@ -39,6 +40,7 @@ class RuntimeFrame:
     calibration_sample_count: int
     calibration_result: Optional[CalibrationResult]
     phone_observation: Optional[PhoneObservation] = None
+    timestamp: Optional[float] = None
 
     @property
     def calibrating(self) -> bool:
@@ -80,6 +82,7 @@ class MonitorRuntime:
         project_root: Path,
         video_path: Optional[Path] = None,
         phone_detector: Optional[PhoneDetector] = None,
+        session_recorder: Optional[SessionRecorder] = None,
     ):
         import cv2
 
@@ -101,7 +104,13 @@ class MonitorRuntime:
         self.capture = None
         self.analyzer = None
         self._closed = False
+        self.recorder = session_recorder
         try:
+            if self.recorder is None and config.output.record_session:
+                directory = Path(config.output.sessions_path)
+                if not directory.is_absolute():
+                    directory = self.project_root / directory
+                self.recorder = SessionRecorder(directory, config, self.source)
             self.capture = _open_capture(self.source, config)
             self.analyzer = MediaPipeFaceAnalyzer(
                 model_path=model_path,
@@ -129,13 +138,17 @@ class MonitorRuntime:
             self._last_video_timestamp: Optional[float] = None
             self._video_fps = self.capture.get(cv2.CAP_PROP_FPS) if video_path else 0.0
             self._meter = FpsMeter()
+            if self.recorder is not None:
+                self.recorder.set_device(self.phone_detector.device if self.phone_detector is not None else None)
             self.reset_calibration()
-        except Exception:
+        except Exception as exc:
             with suppress(Exception):
-                self.close()
+                self.close(status="error", error=str(exc))
             raise
 
     def reset_calibration(self) -> None:
+        if self.recorder is not None:
+            self.recorder.recalibrate()
         self.phone_observation = None
         self._last_phone_inference_timestamp = float("-inf")
         if self.config.calibration.enabled:
@@ -152,11 +165,11 @@ class MonitorRuntime:
             return None
         try:
             return self._read_frame()
-        except Exception:
+        except Exception as exc:
             # Preserve the original processing error after releasing both
             # resources, even if a backend also fails during cleanup.
             with suppress(Exception):
-                self.close()
+                self.close(status="error", error=str(exc))
             raise
 
     def _video_timestamp(self) -> float:
@@ -178,7 +191,7 @@ class MonitorRuntime:
     def _read_frame(self) -> Optional[RuntimeFrame]:
         ok, frame = self.capture.read()
         if not ok:
-            self.close()
+            self.close(status="completed" if self.video_path is not None else "stream_ended")
             return None
 
         now = monotonic()
@@ -266,7 +279,7 @@ class MonitorRuntime:
             remaining = self.calibration.remaining_seconds(timestamp)
             sample_count = self.calibration.sample_count
 
-        return RuntimeFrame(
+        result = RuntimeFrame(
             frame=frame,
             signals=signals,
             snapshot=snapshot,
@@ -275,9 +288,13 @@ class MonitorRuntime:
             calibration_sample_count=sample_count,
             calibration_result=calibration_result,
             phone_observation=self.phone_observation,
+            timestamp=timestamp,
         )
+        if self.recorder is not None:
+            self.recorder.record(result, self.engine.config if self.engine is not None else self.config.fatigue)
+        return result
 
-    def close(self) -> None:
+    def close(self, status: str = "stopped", error: Optional[str] = None) -> None:
         if self._closed:
             return
         self._closed = True
@@ -285,11 +302,15 @@ class MonitorRuntime:
             if self.capture is not None:
                 self.capture.release()
         finally:
-            if self.analyzer is not None:
-                self.analyzer.close()
+            try:
+                if self.analyzer is not None:
+                    self.analyzer.close()
+            finally:
+                if self.recorder is not None:
+                    self.recorder.finish(status=status, error=error)
 
     def __enter__(self) -> "MonitorRuntime":
         return self
 
     def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> None:
-        self.close()
+        self.close(status="error" if exc_value else "stopped", error=str(exc_value) if exc_value else None)

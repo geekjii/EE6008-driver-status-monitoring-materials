@@ -1,6 +1,7 @@
 """Local web presentation layer for the Python monitoring runtime."""
 
 import argparse
+import json
 from collections import deque
 from contextlib import asynccontextmanager
 from copy import deepcopy
@@ -20,6 +21,8 @@ from .config import load_config
 from .overlay import draw_face_landmarks, draw_phone_boxes
 from .phone_detection import PhoneDetector
 from .runtime import MonitorRuntime, RuntimeFrame
+from .session_recording import SessionRecorder
+from urllib.parse import quote
 
 
 WEB_DIRECTORY = Path(__file__).resolve().parent / "web"
@@ -106,6 +109,26 @@ class WebMonitorService:
         self._jpeg: Optional[bytes] = None
         self._frame_version = 0
         self._phone_detector: Optional[PhoneDetector] = None
+        self._recorder: Optional[SessionRecorder] = None
+        self._saved_export = self.find_recent_export()
+
+    def find_recent_export(self) -> Optional[Dict[str, Any]]:
+        root = Path(self.config.output.sessions_path)
+        if not root.is_absolute():
+            root = self.project_root / root
+        files = sorted(root.glob("监测_*/导出_*/监测摘要.json"), key=lambda path: path.stat().st_mtime, reverse=True)
+        for path in files:
+            try:
+                summary = json.loads(path.read_text(encoding="utf-8"))
+                if not (path.parent / "监测报告.html").is_file():
+                    continue
+                return {"session_id": path.parent.parent.name, "export_id": path.parent.name,
+                        "frames": summary["frames"], "directory": str(path.parent.resolve()),
+                        "report_path": str(path.parent / "监测报告.html"),
+                        "archive_path": str(path.parent / "监测导出.zip"), "status": summary["status"]}
+            except (OSError, ValueError, KeyError):
+                continue
+        return None
 
     def prepare_phone_detector(self) -> None:
         """Load PyTorch/YOLO on the main thread before camera work starts."""
@@ -130,7 +153,49 @@ class WebMonitorService:
         with self._lock:
             payload = deepcopy(self._payload)
             payload["events"] = list(self._events)
-            return payload
+            recorder = self._recorder
+        payload["session"] = recorder.info() if recorder else None
+        if recorder is None and self._saved_export:
+            payload["session"] = {"session_id": self._saved_export["session_id"],
+                                  "frames": self._saved_export["frames"], "read_only": True,
+                                  "closed": True, "directory": self._saved_export["directory"],
+                                  "last_export": self._saved_export, "export_error": None}
+        if payload["session"] and payload["session"]["last_export"]:
+            payload["session"]["last_export"] = self.export_links(payload["session"]["last_export"])
+        return payload
+
+    def export_links(self, result: Dict[str, Any]) -> Dict[str, Any]:
+        prefix = "/api/exports/{}/{}".format(quote(result["session_id"]), quote(result["export_id"]))
+        links = {**result, "report_url": prefix + "/report", "download_url": prefix + "/archive"}
+        if (Path(result["directory"]) / "关键指标折线图.html").is_file():
+            links["charts_url"] = prefix + "/charts"
+        return links
+
+    def export_session(self) -> Dict[str, Any]:
+        with self._lock:
+            recorder = self._recorder
+        if recorder is None:
+            raise ValueError("还没有可导出的监测数据")
+        return self.export_links(recorder.export())
+
+    def export_file(self, session_id: str, export_id: str, kind: str) -> Path:
+        allowed = {"report": "监测报告.html", "charts": "关键指标折线图.html",
+                   "监测报告.html": "监测报告.html", "archive": "监测导出.zip",
+                   "监测数据.csv": "监测数据.csv", "事件记录.csv": "事件记录.csv"}
+        if kind not in allowed or not session_id.startswith("监测_") or not export_id.startswith("导出_"):
+            raise ValueError("找不到导出文件")
+        root = Path(self.config.output.sessions_path)
+        if not root.is_absolute():
+            root = self.project_root / root
+        root = root.resolve()
+        path = (root / session_id / export_id / allowed[kind]).resolve()
+        if not path.is_relative_to(root) or not path.is_file():
+            raise ValueError("找不到导出文件")
+        if kind == "archive":
+            updated = path.parent / "监测导出_含折线图.zip"
+            if updated.is_file():
+                path = updated
+        return path
 
     def _add_event(self, title: str, detail: str, level: str = "info") -> None:
         with self._lock:
@@ -193,6 +258,15 @@ class WebMonitorService:
                     raise ValueError("使用视频路径时，请选择本地视频输入")
                 source_label = "摄像头 {}".format(self.config.camera.index)
             self._stop_event.clear()
+            self._recorder = None
+            if self.config.output.record_session:
+                directory = Path(self.config.output.sessions_path)
+                if not directory.is_absolute():
+                    directory = self.project_root / directory
+                self._recorder = SessionRecorder(
+                    directory, self.config, video_path if video_path is not None else self.config.camera.index,
+                    self._phone_detector.device if self._phone_detector is not None else None,
+                )
             self._commands = Queue()
             self._clear_frame()
             self._reset_payload_locked(
@@ -353,6 +427,7 @@ class WebMonitorService:
                 self.project_root,
                 video_path=video_path,
                 phone_detector=self._phone_detector,
+                session_recorder=self._recorder,
             ) as runtime:
                 while not self._stop_event.is_set():
                     try:
@@ -492,6 +567,25 @@ def create_app(config_path: Path = DEFAULT_CONFIG_PATH) -> FastAPI:
         if not service.recalibrate():
             raise HTTPException(status_code=409, detail="监测尚未启动")
         return {"recalibrating": True}
+
+    @dashboard.post("/api/export")
+    def export():
+        try:
+            return monitor().export_session()
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=500, detail="导出失败：{}".format(exc)) from exc
+
+    @dashboard.get("/api/exports/{session_id}/{export_id}/{kind}")
+    def exported_file(session_id: str, export_id: str, kind: str):
+        try:
+            path = monitor().export_file(session_id, export_id, kind)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        if kind in {"report", "charts", "监测报告.html"}:
+            return FileResponse(path, media_type="text/html")
+        return FileResponse(path, filename=path.name, media_type="application/zip" if kind == "archive" else "text/csv")
 
     @dashboard.get("/api/video", include_in_schema=False)
     def video() -> StreamingResponse:

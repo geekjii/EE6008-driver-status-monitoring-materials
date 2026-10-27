@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /><title>重要指标折线图</title>
+<style>
+:root{color-scheme:light;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:#233346;background:#f3f7fb}*{box-sizing:border-box}body{margin:0}main{max-width:1300px;margin:auto;padding:28px}h1{font-size:28px;margin:0 0 10px}h2{font-size:19px;margin:0 0 8px}p{line-height:1.7;margin:8px 0}.subtle{color:#667d91;font-size:13px}.overview{background:white;border:1px solid #dce5ee;border-radius:16px;padding:20px;margin:18px 0}.cards,.grid{display:grid;gap:16px}.cards{grid-template-columns:repeat(4,1fr)}.card span{display:block;color:#6b7b8c;font-size:12px}.card strong{display:block;font-size:25px;margin-top:6px}.grid{grid-template-columns:1fr 1fr}.chart{background:white;padding:20px;border:1px solid #dce5ee;border-radius:16px;min-width:0}.chart p{font-size:13px;color:#597287;min-height:44px}.chart svg{display:block;width:100%;height:auto}.legend{display:flex;gap:12px;flex-wrap:wrap;margin:9px 0;font-size:12px}.legend span:before{content:"";display:inline-block;width:13px;height:3px;background:var(--color);margin:0 5px 3px 0}.reading{font-size:12px;color:#456178;line-height:1.7;min-height:22px}.controls{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:20px 0;font-size:13px}input,button,a.link{font:inherit;border:1px solid #cbdbe7;border-radius:8px;padding:8px 10px;background:white;color:#35546e}input{width:92px}button{cursor:pointer}a.link{text-decoration:none}.strip-legend{display:flex;gap:14px;flex-wrap:wrap;color:#577087;font-size:12px;margin:14px 0}.strip-legend span:before{content:"";display:inline-block;width:12px;height:12px;margin-right:5px;background:var(--color);vertical-align:middle}footer{padding:20px 0;font-size:12px;color:#657c91}#range-message{color:#b47410;font-size:13px}@media(max-width:850px){main{padding:16px}.grid{grid-template-columns:1fr}.cards{grid-template-columns:1fr 1fr}}
+</style></head>
+<body><main>
+<header><p class="subtle">DriveGuard · 监测结果</p><h1>重要指标折线图</h1><p class="subtle">横轴都是本次监测经过的秒数。蓝色实线表示测量值，虚线表示判断阈值；移到曲线上可查看对应时刻的数据。</p></header>
+<section class="overview"><div class="cards" id="cards"></div><p id="conclusion"></p><p class="subtle" id="scope"></p></section>
+<div class="controls"><label>开始秒数 <input id="from" type="number" step="0.1" /></label><label>结束秒数 <input id="to" type="number" step="0.1" /></label><button id="apply">查看该时间段</button><button id="reset">查看完整过程</button><a class="link" href="监测报告.html">完整数据表与报告</a><a class="link" href="监测数据.csv" download>下载原始表格</a></div>
+<div class="strip-legend"><span style="--color:#e9eef4">校准中</span><span style="--color:#edf6e6">系统正常</span><span style="--color:#fff0ce">系统警告</span><span style="--color:#ffe1e4">系统危险</span></div>
+<p id="range-message"></p><section class="grid" id="charts"></section>
+<footer>灰色校准阶段不进行疲劳判断。图中断开表示指标未测到或尚不可用；原始记录中的空白不能当作0。背景颜色和最后一张图表示系统当时的输出，不能直接视为真实疲劳的标注。手机检测只能说明画面中出现手机，不能确认正在使用手机。</footer>
+</main><script id="key-chart-data" type="application/json">__SESSION_DATA__</script>
+<script>
+const data=JSON.parse(document.querySelector('#key-chart-data').textContent);
+const index=Object.fromEntries(data.columns.map((c,i)=>[c.key,i]));
+const get=(row,key)=>row[index[key]];
+const numeric=v=>typeof v==='number'&&Number.isFinite(v);
+const format=v=>v===null||v===undefined?'暂无数据':numeric(v)?Number(v.toFixed(3)).toString():String(v);
+const summary=data.summary,config=summary.config;
+const rows=data.rows;
+const first=summary.first_timestamp??(rows.length?get(rows[0],'timestamp'):0);
+const last=summary.last_timestamp??(rows.length?get(rows[rows.length-1],'timestamp'):0);
+const from=document.querySelector('#from'),to=document.querySelector('#to');from.value=first;to.value=last;
+const stateNames={NORMAL:'正常',WARNING:'警告',DANGER:'危险',CALIBRATING:'校准中'};
+const backgrounds={NORMAL:'#edf6e6',WARNING:'#fff0ce',DANGER:'#ffe1e4',CALIBRATING:'#e9eef4'};
+const durations=summary.state_seconds||{};
+const cards=[['本次记录时长',(summary.observed_seconds??last-first).toFixed(1)+' 秒'],['校准时间',(durations.CALIBRATING??0).toFixed(1)+' 秒'],['系统警告时间',(durations.WARNING??0).toFixed(1)+' 秒'],['系统危险时间',(durations.DANGER??0).toFixed(1)+' 秒']];
+for(const[label,value]of cards){const card=document.createElement('div');card.className='card';const caption=document.createElement('span');caption.textContent=label;const number=document.createElement('strong');number.textContent=value;card.append(caption,number);document.querySelector('#cards').append(card)}
+const checked=rows.filter(row=>get(row,'phone_fresh')===true),positive=checked.filter(row=>get(row,'phone_detected')===true);
+document.querySelector('#conclusion').textContent=`共记录 ${rows.length} 帧。`+(checked.length?`手机实际检查 ${checked.length} 次，其中 ${positive.length} 次检测到手机。`:'本次没有可用的手机检测结果。')+'下面六张图可以对应查看眼睛、嘴巴、闭眼占比、头部方向、手机和系统状态。';
+document.querySelector('#scope').textContent=(summary.status==='recording'?'这是运行中导出的快照。':'这是已经结束的监测记录。')+(summary.data_origin==='synthetic_test'?'本页为人工构造测试数据。':'')+'原始数值没有修改，比例仅在图中换算为百分数。';
+const definitions=[
+ {title:'1. 眼睛有没有闭上',note:'眼睛开合值（EAR）越低，眼睛越闭合。低于橙色虚线表示达到个人闭眼阈值；还要持续一定时间才报警。',unit:'开合值',series:[['ear','眼睛开合值','#167fb4'],['ear_threshold','个人闭眼阈值','#c77a08',true]]},
+ {title:'2. 嘴巴有没有张大',note:'嘴巴张开值（MAR）越高，嘴张得越大。高于橙色虚线表示达到张嘴阈值；持续张嘴用于近似判断哈欠。',unit:'张开值',series:[['mar','嘴巴张开值','#167fb4'],['mar_threshold','个人张嘴阈值','#c77a08',true]]},
+ {title:'3. 最近一段时间闭眼多不多',note:`闭眼时间占比（PERCLOS）越高，需要越注意。${config.fatigue.perclos_warning_threshold*100}%是警告参考线，${config.fatigue.perclos_danger_threshold*100}%是危险参考线；有效观测不足时留空。`,unit:'%',percent:true,series:[['perclos','闭眼时间占比','#167fb4']],thresholds:[[config.fatigue.perclos_warning_threshold*100,'警告参考线','#c77a08'],[config.fatigue.perclos_danger_threshold*100,'危险参考线','#d9434a']]},
+ {title:'4. 头有没有偏离前方',note:`蓝线表示抬头/低头，绿线表示左右转头。低头角度达到虚线或左右转头超过正负参考线，持续约${config.fatigue.head_pose_warning_seconds}秒后提醒。`,unit:'度',series:[['head_pitch','俯仰角','#167fb4'],['head_yaw','左右转头角','#73a719']],thresholds:[[config.fatigue.head_down_warning_degrees,'低头参考线','#c77a08'],[config.fatigue.head_yaw_warning_degrees,'左右参考线','#d9434a'],[-config.fatigue.head_yaw_warning_degrees,'左右参考线','#d9434a']]},
+ {title:'5. 有没有检测到手机',note:`蓝线是手机检测置信度，虚线是${config.phone.confidence_threshold*100}%的检测门槛。绿色顶部标记表示当时检测到手机；连续出现约${config.fatigue.phone_warning_seconds}秒后才提醒。置信度不是系统准确率。`,unit:'%',percent:true,phone:true,series:[['phone_confidence','手机检测置信度','#167fb4']],thresholds:[[config.phone.confidence_threshold*100,'检测门槛','#c77a08']]},
+ {title:'6. 系统当时判定是什么状态',note:'这里直接显示正常、警告和危险，校准期间不显示疲劳等级。可和其他图同一时刻的变化一起看。',unit:'状态',state:true,step:true,series:[['state_level','系统判定','#d9434a']]},
+];
+function value(row,key,definition){if(key==='state_level')return {NORMAL:0,WARNING:1,DANGER:2}[get(row,'state')]??null;if(key==='perclos'&&get(row,'perclos_ready')!==true)return null;const v=get(row,key);return numeric(v)&&definition.percent?v*100:v}
+function element(tag,attributes={}){const item=document.createElementNS('http://www.w3.org/2000/svg',tag);for(const[key,v]of Object.entries(attributes))item.setAttribute(key,v);return item}
+function label(svg,text,x,y,align='end'){const item=element('text',{x,y,'text-anchor':align,fill:'#60798e','font-size':11});item.textContent=text;svg.append(item)}
+function reduced(input,definition){if(input.length<=2000)return input;const selected=new Set([0,input.length-1]);const size=Math.ceil(input.length/160);for(let at=0;at<input.length;at+=size){selected.add(at);selected.add(Math.min(input.length-1,at+size-1));for(const[key]of definition.series){let low=null,high=null;for(let i=at;i<Math.min(at+size,input.length);i++){const v=value(input[i],key,definition);if(!numeric(v)){if(i===0||numeric(value(input[i-1],key,definition)))selected.add(i);continue}if(i>0&&!numeric(value(input[i-1],key,definition)))selected.add(i);if(low===null||v<value(input[low],key,definition))low=i;if(high===null||v>value(input[high],key,definition))high=i}if(low!==null)selected.add(low);if(high!==null)selected.add(high)}}return [...selected].sort((a,b)=>a-b).map(i=>input[i])}
+function draw(definition,input,a,b){
+ const panel=document.createElement('article');panel.className='chart';const title=document.createElement('h2');title.textContent=definition.title;const note=document.createElement('p');note.textContent=definition.note;panel.append(title,note);
+ const svg=element('svg',{viewBox:'0 0 610 270',role:'img','aria-label':definition.title});const left=58,right=589,top=28,bottom=230;
+ let min=Infinity,max=-Infinity;for(const row of input)for(const[key]of definition.series){const v=value(row,key,definition);if(numeric(v)){min=Math.min(min,v);max=Math.max(max,v)}}for(const[v]of definition.thresholds||[]){min=Math.min(min,v);max=Math.max(max,v)}
+ if(definition.state){min=0;max=2}else if(definition.percent){min=0;max=100}else{if(!numeric(min)){min=0;max=1}if(min===max){min-=.1;max+=.1}const padding=(max-min)*.1;min-=padding;max+=padding}
+ const x=t=>left+(t-a)/Math.max(.001,b-a)*(right-left),y=v=>bottom-(v-min)/(max-min)*(bottom-top);
+ // Background intervals come directly from the recorded state at each frame.
+ for(let i=0;i<rows.length-1;i++){const t=get(rows[i],'timestamp'),next=get(rows[i+1],'timestamp');if(next<a||t>b)continue;svg.append(element('rect',{x:x(Math.max(a,t)),y:top,width:Math.max(0,x(Math.min(b,next))-x(Math.max(a,t))),height:bottom-top,fill:backgrounds[get(rows[i],'state')]||'#fff'}));if(definition.phone&&get(rows[i],'phone_detected')===true)svg.append(element('rect',{x:x(Math.max(a,t)),y:12,width:Math.max(0,x(Math.min(b,next))-x(Math.max(a,t))),height:6,fill:'#73a719'}))}
+ const ticks=definition.state?[0,1,2]:Array.from({length:5},(_,i)=>min+(max-min)*i/4);
+ for(const v of ticks){svg.append(element('line',{x1:left,y1:y(v),x2:right,y2:y(v),stroke:'#d7e2ea','stroke-opacity':.7}));label(svg,definition.state?['正常','警告','危险'][v]:Number(v.toFixed(definition.percent?0:2))+(definition.percent?'%':''),left-8,y(v)+4)}
+ for(let i=0;i<=4;i++){const t=a+(b-a)*i/4;label(svg,Number(t.toFixed(1))+'秒',x(t),253,'middle')}
+ label(svg,definition.unit,left,15,'start');const legend=document.createElement('div');legend.className='legend';const sample=reduced(input,definition);
+ for(const[key,name,color,dashed]of definition.series){let path='',previous=null;for(const row of sample){const v=value(row,key,definition);if(!numeric(v)){previous=null;continue}const xx=x(get(row,'timestamp')),yy=y(v);path+=previous===null?`M${xx},${yy}`:definition.step?`L${xx},${previous}L${xx},${yy}`:`L${xx},${yy}`;previous=yy}if(path)svg.append(element('path',{d:path,fill:'none',stroke:color,'stroke-width':2,...(dashed?{'stroke-dasharray':'6 4'}:{})}));const item=document.createElement('span');item.style.setProperty('--color',color);item.textContent=name;legend.append(item)}
+ for(const[v,name,color]of definition.thresholds||[]){svg.append(element('line',{x1:left,y1:y(v),x2:right,y2:y(v),stroke:color,'stroke-dasharray':'6 4'}));const item=document.createElement('span');item.style.setProperty('--color',color);item.textContent=name+' '+format(v)+(definition.percent?'%':'');legend.append(item)}
+ const reading=document.createElement('div');reading.className='reading';reading.textContent=input.length?'移到曲线上查看具体数值':'这段时间没有数据';const marker=element('line',{y1:top,y2:bottom,stroke:'#637f93','stroke-dasharray':'3 3',visibility:'hidden'});svg.append(marker);
+ svg.addEventListener('pointermove',event=>{if(!input.length)return;const rect=svg.getBoundingClientRect(),t=a+((event.clientX-rect.left)/rect.width*610-left)/(right-left)*(b-a);let lo=0,hi=input.length-1;while(lo<hi){const mid=Math.floor((lo+hi)/2);if(get(input[mid],'timestamp')<t)lo=mid+1;else hi=mid}let row=input[lo];if(lo>0&&Math.abs(get(input[lo-1],'timestamp')-t)<Math.abs(get(row,'timestamp')-t))row=input[lo-1];const xx=x(get(row,'timestamp'));marker.setAttribute('x1',xx);marker.setAttribute('x2',xx);marker.setAttribute('visibility','visible');reading.textContent=get(row,'timestamp').toFixed(2)+'秒 · '+definition.series.map(([key,name])=>{const v=value(row,key,definition);return name+'：'+(definition.state?stateNames[get(row,'state')]:format(v)+(definition.percent&&numeric(v)?'%':''))}).join(' · ')+(definition.phone?' · '+(get(row,'phone_detected')===null?'尚未检测':get(row,'phone_detected')?'检测到手机':'未检测到手机'):'')});
+ panel.append(svg,legend,reading);document.querySelector('#charts').append(panel);
+}
+function render(){const a=Number(from.value),b=Number(to.value);if(!numeric(a)||!numeric(b)||b<a){document.querySelector('#range-message').textContent='结束时间不能早于开始时间。';return}const selected=rows.filter(row=>get(row,'timestamp')>=a&&get(row,'timestamp')<=b);document.querySelector('#charts').replaceChildren();document.querySelector('#range-message').textContent=`当前查看 ${a.toFixed(1)}–${b.toFixed(1)} 秒，包含 ${selected.length} 帧。`;for(const definition of definitions)draw(definition,selected,a,b)}
+document.querySelector('#apply').addEventListener('click',render);document.querySelector('#reset').addEventListener('click',()=>{from.value=first;to.value=last;render()});render();
+</script></body></html>

@@ -213,6 +213,12 @@ h2 { font-size: 20px; letter-spacing: -0.025em; }
 .source-controls :disabled { opacity: 0.6; cursor: not-allowed; }
 .camera-meta #source-caption { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 75%; }
 .controls { gap: 8px; }
+.export-panel { display: flex; justify-content: space-between; align-items: center; gap: 18px; flex-wrap: wrap; padding: 18px; margin-top: 18px; }
+.export-panel h2 { font-size: 16px; margin-bottom: 6px; }
+.export-panel p { font-size: 12px; color: var(--muted); line-height: 1.6; }
+.export-panel small { display: block; color: var(--muted); font-size: 10px; margin-top: 6px; overflow-wrap: anywhere; max-width: 680px; }
+.export-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.export-actions a { text-decoration: none; }
 .button { padding: 11px 16px; border: 1px solid transparent; border-radius: 11px; color: var(--text); background: transparent; cursor: pointer; font-size: 12px; font-weight: 800; }
 .button.primary { color: #ffffff; background: linear-gradient(135deg, #83b72e, #659d1c); box-shadow: 0 8px 20px rgba(101,157,28,0.18); }
 .button.secondary { background: #e9f1f7; border-color: var(--line); }

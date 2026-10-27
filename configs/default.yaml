@@ -54,3 +54,5 @@ output:
   show_window: true
   write_events: true
   events_path: outputs/events.jsonl
+  record_session: true
+  sessions_path: outputs/监测导出
